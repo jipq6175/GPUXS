@@ -1,7 +1,24 @@
 // gpuswaxs.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
+
 #include <iostream>
+#include <fstream>
+#include <arrayfire.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <string>
+
+using namespace af;
+
+typedef unsigned char byte;
+
+#include "aff.h"
+#include "voxel.h"
+#include "pdb.h"
+
+
 
 int main()
 {
