@@ -2,6 +2,7 @@
 
 /*------------------------class Voxel--------------------------------------*/
 class Voxel {
+
 private:
 	int nr_voxels; // number of voxels
 	array coordata; // all the coordinates (x,y,z) of voxels stored in GPU array
@@ -35,7 +36,7 @@ Voxel::Voxel(std::string filename) {
 	std::ifstream* input = new std::ifstream(filename.c_str(), std::ios::in | std::ios::binary);
 
 	if (!input->good()) {
-		std::cout << "Error: Cannot open [ " << fn << " ]. " << std::endl;
+		std::cout << "Voxel Error: Cannot open [ " << fn << " ]. " << std::endl;
 		exit(1);
 	}
 
@@ -43,17 +44,17 @@ Voxel::Voxel(std::string filename) {
 	std::string line;
 	*input >> line;
 	if (line.compare("#binvox") != 0) {
-		std::cout << "Error: First line reads [" << line << "] instead of [#binvox]" << std::endl;
+		std::cout << "Voxel Error: First line reads [" << line << "] instead of [#binvox]" << std::endl;
 		delete input;
 		Voxel(0);
 	}
 	else {
-		std::cout << "INFO: [#binvox]" << std::endl;
+		std::cout << "Voxel INFO: [#binvox]" << std::endl;
 	}
 
 	int version;
 	*input >> version;
-	std::cout << "INFO: Reading binvox version: " << version << std::endl;
+	std::cout << "Voxel INFO: Reading binvox version: " << version << std::endl;
 
 	// binvox dimensions
 	int depth = -1, height = 0, width = 0;
@@ -66,7 +67,7 @@ Voxel::Voxel(std::string filename) {
 		}
 		else {
 			// Ignore the translate and scale
-			std::cout << "INFO: Keyword [" << line << "], ignored." << std::endl;
+			std::cout << "Voxel INFO: Keyword [" << line << "], ignored." << std::endl;
 			char c;
 			do {
 				c = input->get();
@@ -75,12 +76,12 @@ Voxel::Voxel(std::string filename) {
 	}
 
 	if (!done) {
-		std::cout << "Error: Cannot readin the headers." << std::endl;
+		std::cout << "Voxel Error: Cannot readin the headers." << std::endl;
 		Voxel(0);
 	}
 
 	if (depth == -1) {
-		std::cout << "Error: Missing dimensions in the headers." << std::endl;
+		std::cout << "Voxel Error: Missing dimensions in the headers." << std::endl;
 		Voxel(0);
 	}
 
@@ -88,7 +89,7 @@ Voxel::Voxel(std::string filename) {
 	int size = width * height * depth;
 	byte* voxels = new byte[size];
 	if (!voxels) {
-		std::cout << "Error: Cannot allocating memory." << std::endl;
+		std::cout << "Voxel Error: Cannot allocating memory." << std::endl;
 		Voxel(0);
 	}
 
@@ -106,7 +107,7 @@ Voxel::Voxel(std::string filename) {
 		if (input->good()) {
 			end_index = index + count;
 			if (end_index > size) {
-				std::cout << "Error: Unexpected voxel reading error." << std::endl;
+				std::cout << "Voxel Error: Unexpected voxel reading error." << std::endl;
 				coordata = array(0, 3, s32);
 				nr_voxels = 0;
 			}
@@ -118,7 +119,7 @@ Voxel::Voxel(std::string filename) {
 	}
 
 	input->close();
-	std::cout << "INFO: Success, read " << nr_voxels << " voxels" << std::endl;
+	std::cout << "Voxel INFO: Success, read " << nr_voxels << " voxels" << std::endl;
 
 	// Take care of the zero-voxel, will cause error later
 	if (nr_voxels == 0) exit(0);
@@ -146,7 +147,7 @@ Voxel::Voxel(std::string filename) {
 
 	delete[] a;
 
-	std::cout << "INFO: " << filename << " read-in successfully." << std::endl;
+	std::cout << "Voxel INFO: " << filename << " read-in successfully." << std::endl;
 }
 
 
@@ -161,7 +162,7 @@ void Voxel::swaxs(float qmin, float qspacing, float qmax, float d, float voxvol=
 
 	// Take care of the matmul-error from empty matrix 
 	if (m == 0) {
-		std::cout << "INFO: No voxel found in [ " << fn << " ], program terminating .." << std::endl;
+		std::cout << "Voxel INFO: No voxel found in [ " << fn << " ], program terminating .." << std::endl;
 		exit(0);
 	}
 	float* q = new float[nq];
@@ -187,7 +188,7 @@ void Voxel::swaxs(float qmin, float qspacing, float qmax, float d, float voxvol=
 	array sys1(2, J, f32), amplitude(1, J, f32);
 	
 
-	std::cout << "Start to calculate swaxs curves with J = " << J << " and q = " << qmin << ":" << qspacing << ":" << qmax << " density = " << d * voxvol << "e/A^3" << std::endl;
+	std::cout << "Voxel INFO: Start to calculate swaxs curves with J = " << J << " and q = " << qmin << ":" << qspacing << ":" << qmax << " density = " << d * voxvol << "e/A^3" << std::endl;
 	timer::start();
 
 	// Matrix operations using GPU for every q[i]
@@ -205,23 +206,23 @@ void Voxel::swaxs(float qmin, float qspacing, float qmax, float d, float voxvol=
 		std::cout.flush();
 	}
 
-	printf("\nINFO: Elapsed time: %g seconds\n", timer::stop());
+	printf("\nVoxel INFO: Elapsed time: %g seconds\n", timer::stop());
 
 	// Print out the data file
 	filename.replace(filename.end() - 6, filename.end(), "dat");
 	std::ofstream* out = new std::ofstream(filename);
 	if (!out->good()) {
-		std::cout << "Error: Cannot open [ " << filename << " ]. " << std::endl;
+		std::cout << "Voxel Error: Cannot open [ " << filename << " ]. " << std::endl;
 		exit(1);
 	}
 
-	std::cout << "INFO: Writing q, and intensity to the file: " << filename << " ." << std::endl;
+	std::cout << "Voxel INFO: Writing q, and intensity to the file: " << filename << " ." << std::endl;
 	(*out).precision(17);
 	for (int i = 0; i < nq; i++) {
 		*out << q[i] << "\t" << intensity[i] << std::endl;
 	}
 	out->close();
-	std::cout << "INFO: Writing completed successfully." << std::endl;
+	std::cout << "Voxel INFO: Writing completed successfully." << std::endl;
 
 	delete[] q;
 	delete[] intensity;

@@ -53,7 +53,7 @@ PDB::PDB(std::string filename) {
 	std::ifstream input(fn.c_str(), std::ios::in);
 
 	if (input.fail()) {
-		std::cout << "Error: Cannot open [ " << fn << " ]. " << std::endl;
+		std::cout << "PDB Error: Cannot open [ " << fn << " ]. " << std::endl;
 		exit(1);
 	}
 
@@ -66,13 +66,13 @@ PDB::PDB(std::string filename) {
 		if (line.find("ATOM") == 0) natoms++;
 	}
 	input.close();
-	std::cout << "INFO: Detected " << natoms << " atoms in the file: " << fn << "." << std::endl;
+	std::cout << "PDB INFO: Detected " << natoms << " atoms in the file: " << fn << "." << std::endl;
 	// if (natoms > 50000) std::cout << "WARN: There are too many atoms in the pdb file.\n      Consider using parallel Julia. " << std::endl;
 	n = natoms;
 
 
 	// read again and store relevant information using static array
-	std::cout << "INFO: Processing all atomic coordinates ... " << std::endl;
+	std::cout << "PDB INFO: Processing all atomic coordinates ... " << std::endl;
 	input = std::ifstream(fn.c_str(), std::ios::in);
 	coordinates = new float[3 * n];
 	atomnames = new std::string[n];
@@ -110,7 +110,7 @@ PDB::PDB(std::string filename) {
 	}
 	delete[] elements;
 
-	if (natoms != n) std::cout << "WARN: Atom number mismatch." << std::endl;
+	if (natoms != n) std::cout << "PDB WARN: Atom number mismatch." << std::endl;
 
 	// Convert atom names: for SOL-O, SOL-H, my convention to take care of the electron withdrawing effects
 	for (int i = 0; i < n; i++) {
@@ -119,7 +119,7 @@ PDB::PDB(std::string filename) {
 		}
 	}
 
-	std::cout << "INFO: Finished processing all atomic coordinates. " << std::endl;
+	std::cout << "PDB INFO: Finished processing all atomic coordinates. " << std::endl;
 }
 
 
@@ -209,7 +209,7 @@ void PDB::swaxs(float qmin, float qspacing, float qmax, int J) {
 	// allocate memory for the form factor vector
 	float* atomff = new float[m];
 
-	std::cout << "INFO: Start to calculate swaxs curves..." << std::endl;
+	std::cout << "PDB INFO: Start to calculate swaxs curves..." << std::endl;
 	timer::start();
 
 	// Matrix operations...
@@ -230,23 +230,23 @@ void PDB::swaxs(float qmin, float qspacing, float qmax, int J) {
 		std::cout << std::string((50 * k / nq), '|');
 		std::cout.flush();
 	}
-	printf("\nINFO: Elapsed time: %g seconds\n", timer::stop());
+	printf("\nPDB INFO: Elapsed time: %g seconds\n", timer::stop());
 
 	
 
 	filename.replace(filename.end() - 3, filename.end(), "dat");
 	std::ofstream* out = new std::ofstream(filename);
 	if (!out->good()) {
-		std::cout << "Error: Cannot open [ " << filename << " ]. " << std::endl;
+		std::cout << "PDB Error: Cannot open [ " << filename << " ]. " << std::endl;
 		exit(1);
 	}
 
-	std::cout << "INFO: Writing q, and intensity profile to the file: " << filename << " ." << std::endl;
+	std::cout << "PDB INFO: Writing q, and intensity profile to the file: " << filename << " ." << std::endl;
 	for (int k = 0; k < nq; k++) {
 		*out << q[k] << "\t" << intensity[k] << std::endl;
 	}
 	out->close();
-	std::cout << "INFO: Writing completed successfully." << std::endl;
+	std::cout << "PDB INFO: Writing completed successfully." << std::endl;
 
 	delete[] atomff;
 	delete[] q;
@@ -257,26 +257,27 @@ void PDB::swaxs(float qmin, float qspacing, float qmax, int J) {
 
 
 
-/*
+
 // Solute and solvent subtraction using Park. et al
-void PDB::swaxs(PDB solvent)
+void PDB::swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J)
 {
 
 	std::string filename = fn;
+	std::string* atomnames2 = solvent.get_atomnames();
 
 	// Initialize q and intensity
-	int nq = 701, i, j, J = 1800, m1 = n, m2 = solvent.get_dim();
+	int nq, i, j, m1 = get_dim(), m2 = solvent.get_dim();
+	nq = static_cast<int>(ceil((qmax - qmin) / qspacing));
+
 	float* q = new float[nq];
 	float* intensity = new float[nq];
-	for (i = 0; i < nq; i++) q[i] = 0.002 * i;
+	for (i = 0; i < nq; i++) q[i] = qmin + qspacing * i;
 
 	// Transfer PDB data to GPU
 	//for (int i = 0; i < 3 * n; i++) std::cout << coordinates[i] << " ";
-	array mat1(m1, 3, (float*)coordinates);
-	array mat2(m2, 3, (float*)solvent.get_data());
-	array qr1(m1, J, f32);
-	array qr2(m2, J, f32);
-	array re(1, J, f32), im(1, J, f32);
+	array mat1(m1, 3, coordinates);
+	array mat2(m2, 3, solvent.get_data());
+
 
 	// Solid angle average
 	float* xx = new float[J];
@@ -294,53 +295,57 @@ void PDB::swaxs(PDB solvent)
 	qmat.row(1) = sin(theta) * sin(phi);
 	qmat.row(2) = cos(theta);
 
+
+	array qr1 = matmul(mat1, qmat);
+	array qr2 = matmul(mat2, qmat);
+	array sys1(2, J, f32), sys2(2, J, f32), amplitude(1, J, f32);
+
 	float* atomff1 = new float[m1];
 	float* atomff2 = new float[m2];
 
-	std::cout << "INFO: Start to calculate swaxs curves..." << std::endl;
+	std::cout << "PDB INFO: Start to calculate swaxs curves..." << std::endl;
 	timer::start();
 
 	// matrix operations
 	for (int k = 0; k < nq; k++) {
 
 		// Get a list of form factors 
-		double* ff1 = calculate_form_factor(q[k]);
-		double* ff2 = solvent.calculate_form_factor(q[k]);
-		for (int i = 0; i < m1; i++) atomff1[i] = ff1[atom_match(atomnames[i])];
-		for (int i = 0; i < m2; i++) atomff2[i] = ff2[atom_match(atomnames[i])];
+		std::map<std::string, float> atommap1 = uniquemap(q[k]);
+		std::map<std::string, float> atommap2 = solvent.uniquemap(q[k]);
+		for (i = 0; i < m1; ++i) atomff1[i] = atommap1[atomnames[i]];
+		for (i = 0; i < m2; ++i) atomff2[i] = atommap2[atomnames2[i]];
+		array aff1(1, m1, atomff1);
+		array aff2(1, m2, atomff2);
 
-		array af1(1, m1, (float*)atomff1), af2(1, m2, (float*)atomff2);
+		sys1.row(0) = matmul(aff1, cos(q[k] * qr1));
+		sys1.row(1) = matmul(aff1, -sin(q[k] * qr1));
+		sys2.row(0) = matmul(aff2, cos(q[k] * qr2));
+		sys2.row(1) = matmul(aff2, -sin(q[k] * qr2));
 
-		qr1 = q[k] * matmul(mat1, qmat);
-		qr2 = q[k] * matmul(mat2, qmat);
-		re = matmul(af1, cos(qr1)) - matmul(af2, cos(qr2));
-		// minus sign here matters due to different atomic form factors 
-		im = matmul(af1, -sin(qr1)) - matmul(af2, -sin(qr2));
-		im = pow(im, 2) + pow(re, 2);
-
-		intensity[k] = mean(im)(0).scalar<float>();
+		amplitude = sum(pow(sys1 - sys2, 2));
+		intensity[k] = mean(amplitude)(0).scalar<float>();
 
 		// Cool Loading bar
 		std::cout << "\r" << (100 * k / (nq - 1)) << "% completed: ";
 		std::cout << std::string((50 * k / nq), '|');
 		std::cout.flush();
 	}
-	printf("\nINFO: Elapsed time: %g seconds\n", timer::stop());
+	printf("\nPDB INFO: Elapsed time: %g seconds\n", timer::stop());
 
 	// save file, again, the filename is changed too. 
 	filename.replace(filename.end() - 4, filename.end(), "_buffer_subtracted.dat");
 	std::ofstream* out = new std::ofstream(filename);
 	if (!out->good()) {
-		std::cout << "Error: Cannot open [ " << filename << " ]. " << std::endl;
+		std::cout << "PDB Error: Cannot open [ " << filename << " ]. " << std::endl;
 		exit(1);
 	}
 
-	std::cout << "INFO: Writing q, and intensity to the file: " << filename << " ." << std::endl;
+	std::cout << "PDB INFO: Writing q, and intensity to the file: " << filename << " ." << std::endl;
 	for (int k = 0; k < nq; k++) {
 		*out << q[k] << "\t" << intensity[k] << std::endl;
 	}
 	out->close();
-	std::cout << "INFO: Writing completed successfully." << std::endl;
+	std::cout << "PDB INFO: Writing completed successfully." << std::endl;
 
 	delete[] atomff1;
 	delete[] atomff2;
@@ -348,5 +353,5 @@ void PDB::swaxs(PDB solvent)
 	delete[] intensity;
 
 }
-*/
+
 
