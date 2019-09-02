@@ -6,20 +6,25 @@ private:
 	int nr_voxels; // number of voxels
 	array coordata; // all the coordinates (x,y,z) of voxels stored in GPU array
 	std::string fn; // filename
+
 public:
-	Voxel(int n); // null constructor
+	Voxel(int n); 
 	Voxel(std::string filename); // The meaningful constructor from a .binvox filename
 	array getdata() const { return coordata; };
 	int getdim() const { return nr_voxels; };
 	std::string get_filename() const { return fn; };
-	void swaxs(); // Calculate SWAXS curevs and outputs the filename.dat
+	void swaxs(float qmin, float qspacing, float qmax, float d, float voxvol, int J);
 };
+
+
 
 Voxel::Voxel(int n) {
 	nr_voxels = n;
 	coordata = array(n, 3, s32);
 	fn = "empty";
 }
+
+
 
 // Construct Voxel by reading the .binvox file
 Voxel::Voxel(std::string filename) {
@@ -51,8 +56,7 @@ Voxel::Voxel(std::string filename) {
 	std::cout << "INFO: Reading binvox version: " << version << std::endl;
 
 	// binvox dimensions
-	int depth, height, width;
-	depth = -1;
+	int depth = -1, height = 0, width = 0;
 	int done = 0;
 	while (input->good() && !done) {
 		*input >> line;
@@ -91,7 +95,7 @@ Voxel::Voxel(std::string filename) {
 	// read binvox data
 	byte value, count;
 	int index = 0, end_index = 0;
-	nr_voxels = 0; // It is built in instance: this.nr_voxels
+	nr_voxels = 0; 
 
 	input->unsetf(std::ios::skipws);
 	*input >> value;
@@ -145,24 +149,27 @@ Voxel::Voxel(std::string filename) {
 	std::cout << "INFO: " << filename << " read-in successfully." << std::endl;
 }
 
-void Voxel::swaxs() {
 
-	// NOTE: use the type of f32 instead of f64 and the performance is improved by 3x
+
+
+void Voxel::swaxs(float qmin, float qspacing, float qmax, float d, float voxvol=8.0, int J=2500) {
+
 
 	std::string filename = fn;
-	int nq = 701, i, j, J = 2500, m = getdim();
+	int nq, i, j, m = getdim();
+	nq = static_cast<int>(ceil((qmax - qmin) / qspacing));
 
 	// Take care of the matmul-error from empty matrix 
 	if (m == 0) {
 		std::cout << "INFO: No voxel found in [ " << fn << " ], program terminating .." << std::endl;
 		exit(0);
 	}
-	double* q = new double[nq];
-	double* intensity = new double[nq];
-	for (i = 0; i < nq; i++) q[i] = 0.002 * i;
+	float* q = new float[nq];
+	float* intensity = new float[nq];
+	for (i = 0; i < nq; i++) q[i] = qmin + qspacing * i;
 
 	// Solid angle average
-	double* xx = new double[J];
+	float* xx = new float[J];
 	array theta(1, J, f32), phi(1, J, f32);
 	for (j = 0; j < J; j++) xx[j] = (2.0 * (j + 1.0) - 1.0 - J) / J;
 
@@ -176,22 +183,21 @@ void Voxel::swaxs() {
 	qmat.row(1) = sin(theta) * sin(phi);
 	qmat.row(2) = cos(theta);
 
-	//array mat(nr_voxels, 3, f64);
-	//mat = coordata; 
 	array qr(m, J, f32);
-	array sys1(1, J, f32), sys2(1, J, f32);
+	array sys1(2, J, f32), amplitude(1, J, f32);
+	
 
-	std::cout << "Start to calculate swaxs curves..." << std::endl;
+	std::cout << "Start to calculate swaxs curves with J = " << J << " and q = " << qmin << ":" << qspacing << ":" << qmax << " density = " << d * voxvol << "e/A^3" << std::endl;
 	timer::start();
 
 	// Matrix operations using GPU for every q[i]
 	for (i = 0; i < nq; i++) {
-		qr = q[i] * matmul(coordata, qmat);
-		sys1 = sum(cos(qr));
-		// NOTE: Here, a minus sign does not matter, squared out anyway
-		sys2 = sum(1.0 * sin(qr));
-		sys2 = pow(sys2, 2) + pow(sys1, 2);
-		intensity[i] = mean(sys2, 1)(0).scalar<float>();
+		qr = (d * voxvol) * q[i] * matmul(coordata, qmat);
+		sys1.row(0) = sum(cos(qr));
+		sys1.row(1) = sum(-sin(qr)); 
+
+		amplitude = sum(pow(sys1, 2));
+		intensity[i] = mean(amplitude, 1)(0).scalar<float>();
 
 		// Using A Cool Loading Bar
 		std::cout << "\r" << (100 * i / (nq - 1)) << "% completed: ";
@@ -202,7 +208,6 @@ void Voxel::swaxs() {
 	printf("\nINFO: Elapsed time: %g seconds\n", timer::stop());
 
 	// Print out the data file
-	// The intensities are normalized using I(0) with 17 digits precision
 	filename.replace(filename.end() - 6, filename.end(), "dat");
 	std::ofstream* out = new std::ofstream(filename);
 	if (!out->good()) {
@@ -213,7 +218,7 @@ void Voxel::swaxs() {
 	std::cout << "INFO: Writing q, and intensity to the file: " << filename << " ." << std::endl;
 	(*out).precision(17);
 	for (int i = 0; i < nq; i++) {
-		*out << q[i] << "\t" << intensity[i] / intensity[0] << std::endl;
+		*out << q[i] << "\t" << intensity[i] << std::endl;
 	}
 	out->close();
 	std::cout << "INFO: Writing completed successfully." << std::endl;
