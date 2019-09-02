@@ -9,6 +9,8 @@ private:
 	int n; // number of atoms in the pdb
 	std::string* atomnames;
 	std::string* residues;
+	float calculate_form_factor(int id, float q) const; // Calculate a vector of form factor at q 
+
 
 public:
 	// Constructors
@@ -21,10 +23,10 @@ public:
 	int get_dim() const { return n; };
 	std::string* get_atomnames() const { return atomnames; };
 	std::string* get_residues() const { return residues; };
-	int atom_match(std::string str) const; // process the atomnames 
-	float calculate_form_factor(int id, float q) const; // Calculate a vector of form factor at q 
-	void swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J); // Calculate swaxs curve using solute and solvent pdbs
+	std::map<std::string, float> uniquemap(float q);
 	void swaxs(float qmin, float qspacing, float qmax, int J); // Calculate swaxs curve using one pdb (in vacuo or in vitro)
+	void swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J); // Calculate swaxs curve using solute and solvent pdbs
+
 
 };
 
@@ -134,47 +136,75 @@ float PDB::calculate_form_factor(int id, float q) const {
 
 
 
-// 
+
+// calculate a unique map at a specifit q
+std::map<std::string, float> PDB::uniquemap(float q) {
+
+	std::set<std::string> unique(atomnames, atomnames + n); 
+	std::set<std::string>::iterator p_unique = unique.begin();
+
+	int nunique = unique.size();
+	std::map<std::string, float> rlt; 
+	std::string tmp; 
+	for (int i = 0; i < nunique; ++i) {
+		tmp = *p_unique;
+		rlt.insert(std::pair<std::string, float>(tmp, calculate_form_factor(AFMAP[tmp], q)));
+		p_unique++;
+	}
+
+
+	// Deal with the SOLO and SOLH
+	if (rlt.count("SOLH") == 1) rlt.at("SOLH") = rlt["SOLH"] * (1.0 - 0.48 * exp(-0.5 * pow(q / 2.2, 2)));
+	if (rlt.count("SOLO") == 1) rlt.at("SOLO") = rlt["SOLO"] * (1.0 + 0.12 * exp(-0.5 * pow(q / 2.2, 2)));
+
+	return rlt; 
+	
+}
 
 
 
 
 
-/*
+
 // Calculate swaxs curve in vacuo or in vitro.. (the shape of the solvent contributes if solvent exists... )
 // NOTE: This is probably more useful for placevent-ed conformations without bulk solvent..
-void PDB::swaxs() {
+void PDB::swaxs(float qmin, float qspacing, float qmax, int J) {
+
 
 	std::string filename = fn;
 
 	// Initialize q and intensity
-	int nq = 701, i, j, J = 1800, m = n;
+	int nq, i, j, m = get_dim();
+	nq = static_cast<int>(ceil((qmax - qmin) / qspacing));
+	
 	float* q = new float[nq];
 	float* intensity = new float[nq];
-	for (i = 0; i < nq; i++) q[i] = 0.002 * i;
+	for (i = 0; i < nq; i++) q[i] = qmin + qspacing * i;
 
 
 	// Transfer PDB data to GPU
-	array mat(m, 3, (float*)coordinates);
-	array qr(m, J, f32);
-	array re(1, J, f32), im(1, J, f32);
+	array mat(m, 3, coordinates);
 
 
 	// Solid angle average
 	float* xx = new float[J];
 	array theta(1, J, f32), phi(1, J, f32);
-	for (j = 0; j < J; j++)
-		xx[j] = (2.0 * (j + 1.0) - 1.0 - J) / J;
+	for (j = 0; j < J; j++) xx[j] = (2.0 * (j + 1.0) - 1.0 - J) / J;
 
 	array x(1, J, xx);
 	delete[] xx;
 	theta = acos(x);
 	phi = sqrt(Pi * J) * asin(x);
 
-	array qmat = randu(3, J, f32);
+	array qmat(3, J, f32);
 	qmat.row(0) = sin(theta) * cos(phi);
 	qmat.row(1) = sin(theta) * sin(phi);
 	qmat.row(2) = cos(theta);
+
+	array qr = matmul(mat, qmat);
+	array sys1(2, J, f32), amplitude(1, J, f32);
+
+
 
 	// allocate memory for the form factor vector
 	float* atomff = new float[m];
@@ -186,19 +216,14 @@ void PDB::swaxs() {
 	for (int k = 0; k < nq; k++) {
 
 		// Get a list of form factors 
-		double* ff = calculate_form_factor(q[k]);
+		std::map<std::string, float> atommap = uniquemap(q[k]);
+		for (i = 0; i < m; i++) atomff[i] = atommap[atomnames[i]];
+		array aff(1, m, atomff);
 
-		for (int i = 0; i < m; i++) {
-			atomff[i] = ff[atom_match(atomnames[i])];
-		}
-
-		array af(1, m, (float*)atomff);
-
-		qr = q[k] * matmul(mat, qmat);
-		re.row(0) = sum(matmul(af, cos(qr)), 0);
-		im.row(0) = sum(matmul(af, sin(qr)), 0);
-		im = pow(im, 2) + pow(re, 2);
-		intensity[k] = mean(im)(0).scalar<float>();
+		sys1.row(0) = matmul(aff, cos(q[k] * qr));
+		sys1.row(1) = matmul(aff, -sin(q[k] * qr));
+		amplitude = sum(pow(sys1, 2));
+		intensity[k] = mean(amplitude)(0).scalar<float>();
 
 		// Cool Loading bar
 		std::cout << "\r" << (100 * k / (nq - 1)) << "% completed: ";
@@ -207,7 +232,8 @@ void PDB::swaxs() {
 	}
 	printf("\nINFO: Elapsed time: %g seconds\n", timer::stop());
 
-	// The output scattering curve is not normalized, the unit is in e^2
+	
+
 	filename.replace(filename.end() - 3, filename.end(), "dat");
 	std::ofstream* out = new std::ofstream(filename);
 	if (!out->good()) {
@@ -227,6 +253,11 @@ void PDB::swaxs() {
 	delete[] intensity;
 }
 
+
+
+
+
+/*
 // Solute and solvent subtraction using Park. et al
 void PDB::swaxs(PDB solvent)
 {
