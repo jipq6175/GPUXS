@@ -2,6 +2,7 @@
 
 /*------------------------class PDB--------------------------------------*/
 class PDB {
+
 private:
 	std::string fn; // filename
 	float* coordinates; // atomic coordinates
@@ -20,12 +21,15 @@ public:
 	int get_dim() const { return n; };
 	std::string* get_atomnames() const { return atomnames; };
 	std::string* get_residues() const { return residues; };
-	int atom_match(std::string str) const; // process the atomnames using my convention (see Julia)
-	double* calculate_form_factor(float q) const; // Calculate a vector of form factor at q 
-	void swaxs(PDB solvent); // Calculate swaxs curve using solute and solvent pdbs
-	void swaxs(); // Calculate swaxs curve using one pdb (in vacuo or in vitro)
+	int atom_match(std::string str) const; // process the atomnames 
+	float calculate_form_factor(int id, float q) const; // Calculate a vector of form factor at q 
+	void swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J); // Calculate swaxs curve using solute and solvent pdbs
+	void swaxs(float qmin, float qspacing, float qmax, int J); // Calculate swaxs curve using one pdb (in vacuo or in vitro)
 
 };
+
+
+
 
 // null constructor
 PDB::PDB(int m) {
@@ -35,6 +39,9 @@ PDB::PDB(int m) {
 	atomnames = new std::string[n];
 	residues = new std::string[n];
 }
+
+
+
 
 // Main Constructor
 PDB::PDB(std::string filename) {
@@ -58,10 +65,11 @@ PDB::PDB(std::string filename) {
 	}
 	input.close();
 	std::cout << "INFO: Detected " << natoms << " atoms in the file: " << fn << "." << std::endl;
-	if (natoms > 50000) std::cout << "WARN: There are too many atoms in the pdb file.\n      Consider using parallel Julia. " << std::endl;
+	// if (natoms > 50000) std::cout << "WARN: There are too many atoms in the pdb file.\n      Consider using parallel Julia. " << std::endl;
 	n = natoms;
 
-	// read again and store relevant informations using static array
+
+	// read again and store relevant information using static array
 	std::cout << "INFO: Processing all atomic coordinates ... " << std::endl;
 	input = std::ifstream(fn.c_str(), std::ios::in);
 	coordinates = new float[3 * n];
@@ -70,6 +78,8 @@ PDB::PDB(std::string filename) {
 	natoms = 0;
 	std::string* elements = new std::string[13];
 	int atom_col = 10;
+
+
 	while (!input.eof()) {
 		std::getline(input, line);
 		if (line.find("ATOM") == 0) {
@@ -99,66 +109,38 @@ PDB::PDB(std::string filename) {
 	delete[] elements;
 
 	if (natoms != n) std::cout << "WARN: Atom number mismatch." << std::endl;
-	// for (int i = 0; i < n; i++) std::cout << coordinates[i] << "\t" << coordinates[i + n] << "\t" << coordinates[i + 2 * n] << std::endl;
 
 	// Convert atom names: for SOL-O, SOL-H, my convention to take care of the electron withdrawing effects
 	for (int i = 0; i < n; i++) {
-		if ((residues[i] == "WAT") || (residues[i] == "SOL")) {
-			atomnames[i].replace(0, 0, "SOL-");
-			// std::cout << atomnames[i] << std::endl;
+		if ((residues[i] == "WAT") || (residues[i] == "SOL") || (residues[i] == "HOH")) {
+			atomnames[i].replace(0, 0, "SOL");
 		}
 	}
 
 	std::cout << "INFO: Finished processing all atomic coordinates. " << std::endl;
 }
 
-// Calculate 18 form factors at a specific q value
-double* PDB::calculate_form_factor(float q) const {
 
-	// For only 18 elements considered here, can be more..
-	static double ff[18];
-	double sum = 0.0;
-	for (int i = 0; i < 16; i++) {
-		sum = COEFS[i][8];
-		for (int j = 0; j < 4; j++) {
-			sum = sum + COEFS[i][2 * j] * exp(-COEFS[i][2 * j + 1] * pow((0.25 * q / Pi), 2));
-		}
-		ff[i] = sum;
+
+
+// Calculate unique form factors for atom id at a specific q value
+float PDB::calculate_form_factor(int id, float q) const {
+	float sum = COEFS[id][8];
+	for (int j = 0; j < 4; j++) {
+		sum = sum + COEFS[id][j] * exp(-COEFS[id][j + 4] * pow((0.25 * q / Pi), 2));
 	}
-
-	// Correction for SOLO and SOLH
-	ff[SOLH] = ff[H] * (1.0 - 0.48 * exp(-0.5 * pow(q / 2.2, 2)));
-	ff[SOLO] = ff[O] * (1.0 + 0.12 * exp(-0.5 * pow(q / 2.2, 2)));
-	return ff;
+	return sum;
 }
 
-// Matching the atoms from "std::string" to "enum"
-int PDB::atom_match(std::string str) const {
-	// Determines the matching of the strings and return corresponding type
-	if (str.compare("SOL-H") == 0) return SOLH;
-	else if (str.compare("SOL-O") == 0) return SOLO;
-	else if (str.compare("BA") == 0) return BA;
-	else if (str.compare("CS") == 0) return CS;
-	else if (str.compare("SR") == 0) return SR;
-	else if (str.compare("RB") == 0) return RB;
-	else if (str.compare("CA") == 0) return CA;
-	else if (str.compare("K") == 0) return K;
-	else if (str.compare("CL") == 0) return CL;
-	else if (str.compare("S") == 0) return S;
-	else if (str.compare("P") == 0) return P;
-	else if (str.compare("MG") == 0) return MG;
-	else if (str.compare("NA") == 0) return NA;
-	else if (str.compare("F") == 0) return F;
-	else if (str.compare("O") == 0) return O;
-	else if (str.compare("N") == 0) return N;
-	else if (str.compare("C") == 0) return C;
-	else if (str.compare("H") == 0) return H;
-	else {
-		std::cout << "WARN: Atom name: " << str << " is not supported." << std::endl;
-		return -1;
-	}
-}
 
+
+// 
+
+
+
+
+
+/*
 // Calculate swaxs curve in vacuo or in vitro.. (the shape of the solvent contributes if solvent exists... )
 // NOTE: This is probably more useful for placevent-ed conformations without bulk solvent..
 void PDB::swaxs() {
@@ -335,3 +317,5 @@ void PDB::swaxs(PDB solvent)
 	delete[] intensity;
 
 }
+*/
+

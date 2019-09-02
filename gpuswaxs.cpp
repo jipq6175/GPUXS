@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <string>
+#include <map>
 
 using namespace af;
 
@@ -23,7 +24,39 @@ typedef unsigned char byte;
 int main()
 {
     std::cout << "Hello World!\n";
+	std::cout << __cplusplus << std::endl;
+
+	for (int u = 0; u < 9; ++u) {
+		std::cout << COEFS[H1n][u] << "  ";
+	}
+	std::cout << std::endl;
+
+	//Voxel vox("por.binvox");
+	//vox.swaxs(0.0, 0.002, 1.0, 0.5, 1.0);
+	//std::cout << vox.getdim() << std::endl;
+
+	PDB solute("solute.pdb");
+	std::string* res = solute.get_residues();
+	std::string* aname = solute.get_atomnames();
+	/*
+	for (int u = 0; u < solute.get_dim(); ++u) {
+		std::cout << aname[u] << std::endl;
+	}*/
+
+
+
+	std::cout << "H id = " << solute.calculate_form_factor(AFMAP["H"], 1.0) << std::endl;
+	
+
+	return 0;
 }
+
+
+
+
+
+
+
 
 // Run program: Ctrl + F5 or Debug > Start Without Debugging menu
 // Debug program: F5 or Debug > Start Debugging menu
