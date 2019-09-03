@@ -1,16 +1,21 @@
 #pragma once
 
-/*------------------------class Voxel--------------------------------------*/
 class Voxel {
 
 private:
-	int nr_voxels; // number of voxels
-	array coordata; // all the coordinates (x,y,z) of voxels stored in GPU array
-	std::string fn; // filename
+
+	// private members
+	int nr_voxels;
+	array coordata;
+	std::string fn;
 
 public:
+
+	// constructors
 	Voxel(int n); 
-	Voxel(std::string filename); // The meaningful constructor from a .binvox filename
+	Voxel(std::string filename); 
+
+	// public methods
 	array getdata() const { return coordata; };
 	int getdim() const { return nr_voxels; };
 	std::string get_filename() const { return fn; };
@@ -19,6 +24,7 @@ public:
 
 
 
+// null constructors
 Voxel::Voxel(int n) {
 	nr_voxels = n;
 	coordata = array(n, 3, s32);
@@ -27,12 +33,11 @@ Voxel::Voxel(int n) {
 
 
 
-// Construct Voxel by reading the .binvox file
+// main constructor
 Voxel::Voxel(std::string filename) {
 
 	fn = filename;
 
-	// input file stream pointer, use "->function()" as (input*).function()
 	std::ifstream* input = new std::ifstream(filename.c_str(), std::ios::in | std::ios::binary);
 
 	if (!input->good()) {
@@ -141,7 +146,7 @@ Voxel::Voxel(std::string filename) {
 		}
 	}
 
-	// Copy a to GPU
+	// copy a to GPU
 	array tmp(nr_voxels, 3, a);
 	coordata = 2.0 * tmp;
 
@@ -169,7 +174,7 @@ void Voxel::swaxs(float qmin, float qspacing, float qmax, float d, float voxvol=
 	float* intensity = new float[nq];
 	for (i = 0; i < nq; i++) q[i] = qmin + qspacing * i;
 
-	// Solid angle average
+	// solid angles
 	float* xx = new float[J];
 	array theta(1, J, f32), phi(1, J, f32);
 	for (j = 0; j < J; j++) xx[j] = (2.0 * (j + 1.0) - 1.0 - J) / J;
@@ -187,11 +192,10 @@ void Voxel::swaxs(float qmin, float qspacing, float qmax, float d, float voxvol=
 	array qr(m, J, f32);
 	array sys1(2, J, f32), amplitude(1, J, f32);
 	
-
 	std::cout << "Voxel INFO: Start to calculate swaxs curves with J = " << J << " and q = " << qmin << ":" << qspacing << ":" << qmax << " density = " << d * voxvol << "e/A^3" << std::endl;
 	timer::start();
 
-	// Matrix operations using GPU for every q[i]
+	// matrix operations using GPU for every q[i]
 	for (i = 0; i < nq; i++) {
 		qr = (d * voxvol) * q[i] * matmul(coordata, qmat);
 		sys1.row(0) = sum(cos(qr));
@@ -200,7 +204,7 @@ void Voxel::swaxs(float qmin, float qspacing, float qmax, float d, float voxvol=
 		amplitude = sum(pow(sys1, 2));
 		intensity[i] = mean(amplitude, 1)(0).scalar<float>();
 
-		// Using A Cool Loading Bar
+		// cool loading bar
 		std::cout << "\r" << (100 * i / (nq - 1)) << "% completed: ";
 		std::cout << std::string((50 * i / nq), '|');
 		std::cout.flush();
@@ -208,7 +212,7 @@ void Voxel::swaxs(float qmin, float qspacing, float qmax, float d, float voxvol=
 
 	printf("\nVoxel INFO: Elapsed time: %g seconds\n", timer::stop());
 
-	// Print out the data file
+	// print out the data file
 	filename.replace(filename.end() - 6, filename.end(), "dat");
 	std::ofstream* out = new std::ofstream(filename);
 	if (!out->good()) {

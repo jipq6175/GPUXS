@@ -4,28 +4,33 @@
 class PDB {
 
 private:
-	std::string fn; // filename
-	float* coordinates; // atomic coordinates
-	int n; // number of atoms in the pdb
+
+	// private members
+	std::string fn; 
+	float* coordinates; 
+	int n; 
 	std::string* atomnames;
 	std::string* residues;
-	float calculate_form_factor(int id, float q) const; // Calculate a vector of form factor at q 
+
+	// private methods
+	float calculate_form_factor(int id, float q) const; 
+	std::map<std::string, float> uniquemap(float q);
 
 
 public:
-	// Constructors
+
+	// constructors
 	PDB(int m);
 	PDB(std::string filename);
 
-	// Functions
+	// public methods
 	std::string get_filename() const { return fn; };
 	float* get_data() const { return coordinates; };
 	int get_dim() const { return n; };
 	std::string* get_atomnames() const { return atomnames; };
 	std::string* get_residues() const { return residues; };
-	std::map<std::string, float> uniquemap(float q);
-	void swaxs(float qmin, float qspacing, float qmax, int J); // Calculate swaxs curve using one pdb (in vacuo or in vitro)
-	void swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J); // Calculate swaxs curve using solute and solvent pdbs
+	void swaxs(float qmin, float qspacing, float qmax, int J); 
+	void swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J); 
 
 
 };
@@ -45,8 +50,9 @@ PDB::PDB(int m) {
 
 
 
-// Main Constructor
+// main Constructor
 PDB::PDB(std::string filename) {
+	
 	// Read in the pdb files
 	fn = filename;
 
@@ -67,7 +73,6 @@ PDB::PDB(std::string filename) {
 	}
 	input.close();
 	std::cout << "PDB INFO: Detected " << natoms << " atoms in the file: " << fn << "." << std::endl;
-	// if (natoms > 50000) std::cout << "WARN: There are too many atoms in the pdb file.\n      Consider using parallel Julia. " << std::endl;
 	n = natoms;
 
 
@@ -112,7 +117,7 @@ PDB::PDB(std::string filename) {
 
 	if (natoms != n) std::cout << "PDB WARN: Atom number mismatch." << std::endl;
 
-	// Convert atom names: for SOL-O, SOL-H, my convention to take care of the electron withdrawing effects
+	// Convert atom names: for SOLO, SOLH, my convention to take care of the electron withdrawing effects
 	for (int i = 0; i < n; i++) {
 		if ((residues[i] == "WAT") || (residues[i] == "SOL") || (residues[i] == "HOH")) {
 			atomnames[i].replace(0, 0, "SOL");
@@ -125,7 +130,7 @@ PDB::PDB(std::string filename) {
 
 
 
-// Calculate unique form factors for atom id at a specific q value
+// calculate unique form factors for atom id at a specific q value
 float PDB::calculate_form_factor(int id, float q) const {
 	float sum = COEFS[id][8];
 	for (int j = 0; j < 4; j++) {
@@ -167,26 +172,22 @@ std::map<std::string, float> PDB::uniquemap(float q) {
 
 
 // Calculate swaxs curve in vacuo or in vitro.. (the shape of the solvent contributes if solvent exists... )
-// NOTE: This is probably more useful for placevent-ed conformations without bulk solvent..
 void PDB::swaxs(float qmin, float qspacing, float qmax, int J) {
 
 
 	std::string filename = fn;
 
-	// Initialize q and intensity
+	// initialize q and intensity
 	int nq, i, j, m = get_dim();
 	nq = static_cast<int>(ceil((qmax - qmin) / qspacing));
-	
 	float* q = new float[nq];
 	float* intensity = new float[nq];
 	for (i = 0; i < nq; i++) q[i] = qmin + qspacing * i;
 
-
-	// Transfer PDB data to GPU
+	// transfer PDB data to GPU
 	array mat(m, 3, coordinates);
 
-
-	// Solid angle average
+	// solid angles
 	float* xx = new float[J];
 	array theta(1, J, f32), phi(1, J, f32);
 	for (j = 0; j < J; j++) xx[j] = (2.0 * (j + 1.0) - 1.0 - J) / J;
@@ -204,15 +205,13 @@ void PDB::swaxs(float qmin, float qspacing, float qmax, int J) {
 	array qr = matmul(mat, qmat);
 	array sys1(2, J, f32), amplitude(1, J, f32);
 
-
-
 	// allocate memory for the form factor vector
 	float* atomff = new float[m];
 
 	std::cout << "PDB INFO: Start to calculate swaxs curves..." << std::endl;
 	timer::start();
 
-	// Matrix operations...
+	// matrix operations...
 	for (int k = 0; k < nq; k++) {
 
 		// Get a list of form factors 
@@ -265,7 +264,7 @@ void PDB::swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J)
 	std::string filename = fn;
 	std::string* atomnames2 = solvent.get_atomnames();
 
-	// Initialize q and intensity
+	// initialize q and intensity
 	int nq, i, j, m1 = get_dim(), m2 = solvent.get_dim();
 	nq = static_cast<int>(ceil((qmax - qmin) / qspacing));
 
@@ -273,13 +272,12 @@ void PDB::swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J)
 	float* intensity = new float[nq];
 	for (i = 0; i < nq; i++) q[i] = qmin + qspacing * i;
 
-	// Transfer PDB data to GPU
-	//for (int i = 0; i < 3 * n; i++) std::cout << coordinates[i] << " ";
+	// transfer PDB data to GPU
 	array mat1(m1, 3, coordinates);
 	array mat2(m2, 3, solvent.get_data());
 
 
-	// Solid angle average
+	// solid angles
 	float* xx = new float[J];
 	array theta(1, J, f32), phi(1, J, f32);
 	for (j = 0; j < J; j++)
@@ -295,7 +293,6 @@ void PDB::swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J)
 	qmat.row(1) = sin(theta) * sin(phi);
 	qmat.row(2) = cos(theta);
 
-
 	array qr1 = matmul(mat1, qmat);
 	array qr2 = matmul(mat2, qmat);
 	array sys1(2, J, f32), sys2(2, J, f32), amplitude(1, J, f32);
@@ -309,7 +306,7 @@ void PDB::swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J)
 	// matrix operations
 	for (int k = 0; k < nq; k++) {
 
-		// Get a list of form factors 
+		// get a list of form factors 
 		std::map<std::string, float> atommap1 = uniquemap(q[k]);
 		std::map<std::string, float> atommap2 = solvent.uniquemap(q[k]);
 		for (i = 0; i < m1; ++i) atomff1[i] = atommap1[atomnames[i]];
@@ -353,5 +350,4 @@ void PDB::swaxs(PDB solvent, float qmin, float qspacing, float qmax, int J)
 	delete[] intensity;
 
 }
-
 

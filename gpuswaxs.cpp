@@ -1,7 +1,6 @@
 // gpuswaxs.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
 
-
+// useful libs
 #include <iostream>
 #include <fstream>
 #include <arrayfire.h>
@@ -12,12 +11,14 @@
 #include <map>
 #include <set>
 
-
+// namespace and typedef
 using namespace af;
 typedef unsigned char byte;
 
+// arg parser header
 #include "cxxopts.hpp"
 
+// swaxs headers
 #include "aff.h"
 #include "voxel.h"
 #include "pdb.h"
@@ -102,10 +103,8 @@ int main(int argc, char* argv[])
 		std::cout << std::string(80, '*') << std::endl << std::endl;
 	}
 
-
-
+	// starting parsing
 	auto parsed = parse(argc, argv);
-
 
 	// parse all the options
 	std::string binvox = parsed["binvox"].as<std::string>();
@@ -118,7 +117,6 @@ int main(int argc, char* argv[])
 	float qmin = parsed["qmin"].as<float>();
 	float qspacing = parsed["qspacing"].as<float>();
 	float qmax = parsed["qmax"].as<float>();
-
 
 	// Check the values of the arguments
 	if (qspacing <= 0.0) {
@@ -135,7 +133,6 @@ int main(int argc, char* argv[])
 		std::cout << "GPUSWAXS: qmin should be less than qmax, but the specified values: qmin = " << qmin << " > qmax = " << qmax << " ..." << std::endl;
 		exit(1);
 	}
-
 
 	// Do the job based on binvox, pdb, solute, solvent
 	if ((binvox != "") && (pdb == "") && (solute == "") && (solvent == "")) {
