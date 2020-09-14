@@ -1,5 +1,5 @@
-# GPUSWAXS
-Calculating SWAXS profiles from large number of atoms using GPU
+# GPUXS
+Calculating X-ray scattering profiles from large number of atoms using GPU
 
 (Last Updated: 09/02/2019, Merged to SWAXS.jl, Archived 09/14/2020)
 
