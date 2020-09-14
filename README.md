@@ -1,6 +1,8 @@
 # GPUSWAXS
 Calculating SWAXS profiles from large number of atoms using GPU
 
+(Last Updated: 09/02/2019, Merged to SWAXS.jl, Archived 09/14/2020)
+
 
 ## Prerequisite
 1. ArrayFire
